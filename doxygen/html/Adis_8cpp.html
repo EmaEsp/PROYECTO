@@ -136,7 +136,77 @@ Functions</h2></td></tr>
   </table>
   </dd>
 </dl>
-<dl class="section return"><dt>Returns</dt><dd>0 si el programa se ejecuta correctamente, 1 si hay errores. </dd></dl>
+<dl class="section return"><dt>Returns</dt><dd>0 si el programa se ejecuta correctamente, 1 si hay errores.</dd></dl>
+<p>Este programa realiza la multiplicación de matrices C = A * B utilizando MPI para computación paralela. Los pasos principales son los siguientes:</p>
+<ol type="1">
+<li><b>Verificar número de argumentos:</b> <div class="fragment"><div class="line"><span class="keywordflow">if</span> (argc != 7) {</div>
+<div class="line">    std::cerr &lt;&lt; <span class="stringliteral">&quot;Usage: &quot;</span> &lt;&lt; argv[0] &lt;&lt;</div>
+<div class="line">        <span class="stringliteral">&quot; --l [filas de A] --m [columnas de B] --n [columnas de A/filas de B]&quot;</span> &lt;&lt; std::endl;</div>
+<div class="line">    <span class="keywordflow">return</span> 1;</div>
+<div class="line">}</div>
+</div><!-- fragment --></li>
+<li><b>Leer dimensiones de las matrices:</b> <div class="fragment"><div class="line"><span class="keywordtype">int</span> l, m, n;</div>
+<div class="line"><span class="keywordflow">try</span> {</div>
+<div class="line">    l = std::stoi(argv[2]);</div>
+<div class="line">    m = std::stoi(argv[4]);</div>
+<div class="line">    n = std::stoi(argv[6]);</div>
+<div class="line">} <span class="keywordflow">catch</span> (<span class="keyword">const</span> std::invalid_argument&amp; e) {</div>
+<div class="line">    std::cerr &lt;&lt; <span class="stringliteral">&quot;Error: Argumentos no válidos. Se esperaban números enteros.&quot;</span> &lt;&lt; std::endl;</div>
+<div class="line">    <span class="keywordflow">return</span> 1;</div>
+<div class="line">} <span class="keywordflow">catch</span> (<span class="keyword">const</span> std::out_of_range&amp; e) {</div>
+<div class="line">    std::cerr &lt;&lt; <span class="stringliteral">&quot;Error: Desbordamiento al convertir los números.&quot;</span> &lt;&lt; std::endl;</div>
+<div class="line">    <span class="keywordflow">return</span> 1;</div>
+<div class="line">}</div>
+</div><!-- fragment --></li>
+<li><b>Inicializar MPI:</b> <div class="fragment"><div class="line">MPI_Init(&amp;argc, &amp;argv);</div>
+<div class="line"><span class="keywordtype">int</span> num_procs, rank;</div>
+<div class="line">MPI_Comm_size(MPI_COMM_WORLD, &amp;num_procs);</div>
+<div class="line">MPI_Comm_rank(MPI_COMM_WORLD, &amp;rank);</div>
+</div><!-- fragment --></li>
+<li><b>Inicializar matrices A y B (en el proceso 0):</b> <div class="fragment"><div class="line"><span class="keywordflow">if</span>(rank == 0) {</div>
+<div class="line">    <span class="keywordflow">for</span>(<span class="keywordtype">int</span> i = 0; i &lt; l; ++i) {</div>
+<div class="line">        <span class="keywordflow">for</span>(<span class="keywordtype">int</span> j = 0; j &lt; n; ++j) {</div>
+<div class="line">            A[i * n + j] = i;</div>
+<div class="line">        }</div>
+<div class="line">    }</div>
+<div class="line">    <span class="keywordflow">for</span>(<span class="keywordtype">int</span> i = 0; i &lt; n; ++i) {</div>
+<div class="line">        <span class="keywordflow">for</span>(<span class="keywordtype">int</span> j = 0; j &lt; m; ++j) {</div>
+<div class="line">            B[i * m + j] = j;</div>
+<div class="line">        }</div>
+<div class="line">    }</div>
+<div class="line">}</div>
+</div><!-- fragment --></li>
+<li><b>Compartir los datos de B con todos los procesos:</b> <div class="fragment"><div class="line">MPI_Bcast(B.data(), n * m, MPI_DOUBLE, 0, MPI_COMM_WORLD);</div>
+</div><!-- fragment --></li>
+<li><b>Distribuir las filas de A entre los procesos:</b> <div class="fragment"><div class="line">std::vector&lt;int&gt; counts_recv(num_procs);</div>
+<div class="line">std::vector&lt;int&gt; displacements(num_procs);</div>
+<div class="line"><span class="keywordflow">for</span> (<span class="keywordtype">int</span> i = 0; i &lt; num_procs; ++i) {</div>
+<div class="line">    counts_recv[i] = (llocal + (i &lt; rest ? 1 : 0)) * n;</div>
+<div class="line">    displacements[i] = i * llocal * n + std::min(i, rest) * n;</div>
+<div class="line">}</div>
+<div class="line">MPI_Scatterv(A.data(), counts_recv.data(), displacements.data(), MPI_DOUBLE,</div>
+<div class="line">             llocal_A.data(), llocal * n, MPI_DOUBLE, 0, MPI_COMM_WORLD);</div>
+</div><!-- fragment --></li>
+<li><b>Calcular la multiplicación local de matrices:</b> <div class="fragment"><div class="line"><span class="keywordflow">for</span> (<span class="keywordtype">int</span> i = 0; i &lt; llocal; ++i) {</div>
+<div class="line">    <span class="keywordflow">for</span> (<span class="keywordtype">int</span> j = 0; j &lt; m; ++j) {</div>
+<div class="line">        <span class="keywordflow">for</span> (<span class="keywordtype">int</span> k = 0; k &lt; n; ++k) {</div>
+<div class="line">            C[i * m + j] += llocal_A[i * n + k] * B[k * m + j];</div>
+<div class="line">        }</div>
+<div class="line">    }</div>
+<div class="line">}</div>
+</div><!-- fragment --></li>
+<li><b>Reunir los resultados parciales en el proceso 0:</b> <div class="fragment"><div class="line">MPI_Gatherv(C.data(), llocal * m, MPI_DOUBLE, C_total.data(),</div>
+<div class="line">            counts_recv.data(), displacements.data(), MPI_DOUBLE, 0, MPI_COMM_WORLD);</div>
+</div><!-- fragment --></li>
+<li><b>Imprimir la matriz resultante y el tiempo de ejecución (en el proceso 0):</b> <div class="fragment"><div class="line"><span class="keywordflow">if</span>(rank == 0) {</div>
+<div class="line">    <a class="code hl_function" href="Adis_8cpp.html#a1b9ccc2935e5d6b699468205bd2615d4">print_mat</a>(C_total, l, m);</div>
+<div class="line">    std::cout &lt;&lt; <span class="stringliteral">&quot;Tiempo de multiplicación de matrices: &quot;</span> &lt;&lt; time2 - time1 &lt;&lt; std::endl;</div>
+<div class="line">}</div>
+<div class="ttc" id="aAdis_8cpp_html_a1b9ccc2935e5d6b699468205bd2615d4"><div class="ttname"><a href="Adis_8cpp.html#a1b9ccc2935e5d6b699468205bd2615d4">print_mat</a></div><div class="ttdeci">void print_mat(const std::vector&lt; double &gt; &amp;mat, int rows, int cols)</div><div class="ttdef"><b>Definition</b> Adis.cpp:13</div></div>
+</div><!-- fragment --></li>
+<li><b>Finalizar MPI:</b> <div class="fragment"><div class="line">MPI_Finalize();</div>
+</div><!-- fragment --> </li>
+</ol>
 
 </div>
 </div>
