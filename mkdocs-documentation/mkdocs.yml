@@ -1,0 +1,11 @@
+site_name: Proyecto C++
+theme:
+  name: material
+nav:
+  - Home: index.md
+  - Descripción del Código: descripcion_codigo.md
+  - Reference:
+      - Adis: doxygen/html/Adis_8cpp.html
+      - Paralelizar: doxygen/html/paralelizar_8cpp.html
+plugins:
+  - search
